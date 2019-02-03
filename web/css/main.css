@@ -4,13 +4,6 @@
 
 .modal {
 }
-
-.grayout {
-    opacity: 0.4; /* Real browsers */
-    filter: alpha(opacity = 60); /* MSIE */
-    background-color: #ffffff;
-}
-
 .vertical-alignment-helper {
 	display:table;
 	height: 100%;
@@ -180,6 +173,7 @@
 	color: white;
 }
 
+.paperairplane_left,
 .traffic-style1,
 .traffic-style10,
 .traffic-style11 {
@@ -194,6 +188,7 @@
 	background-color: skyblue;
 }
 
+.paperairplane_right,
 .traffic-style2,
 .traffic-style20,
 .traffic-style21 {
@@ -206,6 +201,21 @@
 .traffic-style24 {
 	color: #000000;
 	background-color: khaki
+}
+
+.paperairplane_left,
+.traffic-style4,
+.traffic-style40,
+.traffic-style41 {
+	color: whitesmoke;
+	background-color: green;
+}
+
+.traffic-style42,
+.traffic-style43,
+.traffic-style44 {
+	color: #000000;
+	background-color: greenyellow;
 }
 
 .icon-red {
@@ -247,7 +257,7 @@
 .fake-btn {
 	background-color:#ccc;
 	margin-bottom:0;
-	font-weight:400; 
+	font-weight:400;
 	text-align:center;
 	vertical-align:middle;
 	cursor:pointer;
@@ -425,10 +435,6 @@ pre {
 
 body {
     font-weight: 400;
-}
-
-input.ng-invalid:not(.grayout){
-    background: pink;
 }
 
 /* change right sidebar behavior to always push */

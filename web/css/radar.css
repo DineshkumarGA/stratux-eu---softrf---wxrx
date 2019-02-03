@@ -1,0 +1,78 @@
+.radar .textDir {
+	font-size: 1em;
+	font-family: sans-serif;
+	text-anchor: left;
+	fill: #FFFFFF;
+}
+.radar .textOutside {
+	font-size: 1.6em;
+	font-family: Helvetica;
+	font-weight: bold;
+	text-anchor: left;
+	fill: #000000;
+}
+.radar .textOutsideRight {
+	font-size: 1.6em;
+	font-family: Helvetica;
+	font-weight: bold;
+	text-anchor: end;
+	fill: #000000;
+}
+.radar .textCirc {
+	font-size: 1.5em;
+	font-family: sans-serif;
+	text-anchor: left;
+	fill: #00FF00;
+}
+.radar .textCOut {
+	font-size: 1.5em;
+	font-family: sans-serif;
+	text-anchor: left;
+	fill: #000000;
+	stroke: #000000;
+	stroke-width: 0.3em;
+}
+
+.radar .greenCirc {
+	fill: none;
+	stroke: #00FF00;
+	stroke-width: 3px;
+}
+
+.radar .textPlane {
+	font-size: 1.5em;
+	font-family: sans-serif;
+	text-anchor: center;
+	fill: #FB4204;
+}
+.radar .textSmall {
+	font-size: 1em;
+	font-family: sans-serif;
+	text-anchor: left;
+	fill: #FFFFFF;
+}
+
+.radar .plane {
+	fill: #FB4204;
+}
+.radar .centerplane {
+	fill: #FFFFFF;
+}
+.radar .planeRotationPoint {
+	fill: #C0C0C0;
+}
+
+.radar .zoom {
+    fill: #121512;
+    stroke: #222522;
+}
+
+.radar .textZoom {
+    font-size: 1.3em;
+    font-family: sans-serif;
+    text-anchor: middle;
+    font-weight: bold;
+    stroke-width: 0;
+    fill: #ddddee;
+}
+

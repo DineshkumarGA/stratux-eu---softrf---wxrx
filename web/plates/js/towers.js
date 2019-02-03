@@ -49,10 +49,8 @@ function TowersCtrl($rootScope, $scope, $state, $http, $interval) {
 		// Simple GET request example (note: responce is asynchronous)
 		$http.get(URL_TOWERS_GET).
 		then(function (response) {
-			$scope.ConnectState = "Connected";
 			loadTowers(response.data);
 		}, function (response) {
-			$scope.ConnectState = "Disconnected";
 			$scope.raw_data = "error getting tower data";
 		});
 	};
@@ -70,4 +68,4 @@ function TowersCtrl($rootScope, $scope, $state, $http, $interval) {
 		// stop any interval functions
 		$interval.cancel(updateTowers);
 	};
-}
+};
