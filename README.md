@@ -3,7 +3,17 @@
 [![BSD3 License](http://img.shields.io/badge/license-BSD3-brightgreen.svg)](https://tldrlegal.com/license/bsd-3-clause-license-%28revised%29)
 [![Stratux Slack](http://slack.stratux.me:3000/badge.svg)](http://slack.stratux.me/)
 
-# stratux
+# Radar-Stratux
+
+Development version of stratux which enhances the web-client with a radar like function. 
+The radar display ADSB traffic nearby, but also draws circles baised on the signal level to indicate Mode-S transmissions only.
+Additionally the modules from PepperJo for FLARM are included. 
+
+
+
+
+--------------------------------------
+based on stratux by cyoung
 RTL-SDR UAT tools
 
 
