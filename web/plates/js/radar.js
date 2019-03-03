@@ -18,8 +18,10 @@ var altDiff = [5,10,20,50,100,500];   // Threshold to display other planes withi
 var altindex = 2;  // start with 2000 ft
 var AltDiffThreshold;    // in 100 feet display value
 
-var stratuxip = "192.168.10.1";
-var situationuri = "http://" + stratuxip + "/getSituation";
+//var stratuxip = "192.168.10.1";
+//var situationuri = "http://" + stratuxip + "/getSituation";
+var situation = {};
+
 
 var sound_alert = new Audio('alert.wav');
 
@@ -62,6 +64,39 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 		if (angle<=-180) angle = angle +360;
 		return angle * Math.PI / 180;
         }
+
+	// get situation data and turn radar
+	function ownSituation(data)
+	{
+	      situation = angular.fromJson(data);
+	      // consider using angular.extend()
+	      $scope.raw_data = angular.toJson(data, true); // makes it pretty
+	      Lat = situation.GPSLatitude;
+	      Long = situation.GPSLongitude;
+	      GPSCourse = situation.GPSTrueCourse;
+	      var press_time = Date.parse(situation.BaroLastMeasurementTime);
+	      var gps_time = Date.parse(situation.GPSLastGPSTimeStratuxTime);
+	      if (gps_time - press_time < 1000) {    //pressure is ok
+		    BaroAltitude = Math.round(situation.BaroPressureAltitude.toFixed(0));
+		    $scope.BaroAltValid = "Baro";
+	      } else {
+		   var gps_horizontal_accuracy = situation.GPSHorizontalAccuracy.toFixed(1);
+		   if ( gps_horizontal_accuracy > 19999) {   //no valid gps signal
+		       $scope.BaroAltValid = "Invalid";
+		       BaroAltitude = -100000;   // marks invalid value
+		   } else {
+		       $scope.BaroAltValid = "GPS";
+		       BaroAltitude= situation.GPSAltitudeMSL.toFixed(1);
+		   }
+	      }
+	       var gps_horizontal_accuracy = situation.GPSHorizontalAccuracy.toFixed(1);
+	       if ( gps_horizontal_accuracy > 19999) {   //no valid gps signal
+		   $scope.GPSValid = "Invalid";
+	       } else {
+		   $scope.GPSValid = "Valid";
+	       }
+	       $scope.$apply();
+	}
 
 	function checkCollisionVector(traffic) {
 		var doUpdate = 0;    //1 if update has to be done;
@@ -286,6 +321,8 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 		if (($scope.socket === undefined) || ($scope.socket === null)) {
 			socket = new WebSocket(URL_TRAFFIC_WS);
 			$scope.socket = socket; // store socket in scope for enter/exit usage
+                        sit_socket = new WebSocket(URL_GPS_WS);  // socket for situation
+			$scope.sit_socket = sit_socket;
 		}
 
 		$scope.ConnectState = "Disconnected";
@@ -313,10 +350,26 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 			onMessageNew(msg);
 		        //radar.update();   moved to changes
 		};
+
+		sit_socket.onopen = function (msg) {
+			//nothing, status is set with traffic port
+		};
+
+		sit_socket.onclose = function (msg) {
+			setTimeout(connect, 1000);
+		};
+
+		sit_socket.onerror = function (msg) {
+			//nothing, status is set with traffic port
+		};
+
+		sit_socket.onmessage = function (msg) {
+			ownSituation(msg.data); 
+		        radar.update(); 
+		};
 	}
 
 	var getClock = $interval(function () {
-		ownSituation($scope);
 		$http.get(URL_STATUS_GET).
 		then(function (response) {
 			globalStatus = angular.fromJson(response.data);
@@ -514,40 +567,3 @@ RadarRenderer.prototype = {
 	 this.fl = this.allScreen.text("FL"+Math.round(BaroAltitude/100)).addClass('textSmall').move(7,5); 
     }
 };
-
-
-// get situation data and turn radar
-function ownSituation(scope)
-{
-   var requestsituation = new XMLHttpRequest();
-   requestsituation.open('GET', situationuri, true);
-   requestsituation.onload = function()
-   {
-      var situation = JSON.parse(this.response);
-      Lat = situation.GPSLatitude;
-      Long = situation.GPSLongitude;
-      GPSCourse = situation.GPSTrueCourse;
-      var press_time = Date.parse(situation.BaroLastMeasurementTime);
-      var gps_time = Date.parse(situation.GPSLastGPSTimeStratuxTime);
-      if (gps_time - press_time < 1000) {    //pressure is ok
-            BaroAltitude = Math.round(situation.BaroPressureAltitude.toFixed(0));
-	    scope.BaroAltValid = "Baro";
-      } else {
-	   var gps_horizontal_accuracy = situation.GPSHorizontalAccuracy.toFixed(1);
-           if ( gps_horizontal_accuracy > 19999) {   //no valid gps signal
-	       scope.BaroAltValid = "Invalid";
-               BaroAltitude = -100000;   // marks invalid value
-           } else {
-	       scope.BaroAltValid = "GPS";
-	       BaroAltitude= situation.GPSAltitudeMSL.toFixed(1);
-           }
-      }
-       var gps_horizontal_accuracy = situation.GPSHorizontalAccuracy.toFixed(1);
-       if ( gps_horizontal_accuracy > 19999) {   //no valid gps signal
-	   scope.GPSValid = "Invalid";
-       } else {
-	   scope.GPSValid = "Valid";
-       }
-   }
-   requestsituation.send();
-}
