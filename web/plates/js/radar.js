@@ -64,11 +64,13 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
         }
 
 	function checkCollisionVector(traffic) {
+		var doUpdate = 0;    //1 if update has to be done;
 		var altDiff;   //difference of altitude to my altitude
 		var distcirc = (-traffic.ema - 6) * (-traffic.ema -6) / 30;    //distance approx. in nm, 6dB for double distance
 		var distx = Math.round(200/DisplayRadius * distcirc);   // x position for circle
 		if (traffic.circ) {   //delete circle + Text
 			traffic.circ.remove().forget();   // undisplay elements and clear children
+			doUpdate = 1;
 		}
 		//console.log("Mode S %d traffic. Distance %f nm Distx %d \n", traffic.icao_int, distcirc, distx);
 		if ( distx < minimalCircle ) distx = minimalCircle;
@@ -78,6 +80,7 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 		   altDiff = traffic.altitude;   //take absolute altitude
 		}
 		if ( (Math.abs(altDiff) <= AltDiffThreshold ) && (distx <= 200)) {
+			doUpdate=1;
 			if ( distcirc<=(DisplayRadius/2) ) {
 				if (!traffic.alarms) traffic.alarms = 0;
 				if (traffic.alarms <=MaxAlarms ) sound_alert.play();  // play alarmtone max times
@@ -106,12 +109,31 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 			  .addClass('textCirc'); //not rotated
 			traffic.circ.add(tratext);
 		} 
+		if ( doUpdate == 1) radar.update();
         }
 
 	function checkCollisionVectorValid(traffic) {
              	var radius_earth = 6371008.8;  // in meters
 		//simplified from equations.go 
 		var avgLat,distanceLat,distanceLng;
+		var doUpdate = 0;
+
+		if (traffic.planeimg) {   //delete Images + Text
+			traffic.planeimg.remove().forget();
+			traffic.planetext.remove().forget();  
+			doUpdate = 1;
+                }
+		var altDiff;   //difference of altitude to my altitude
+		if ( BaroAltitude > -100000 ) {  // valid BaroAlt or valid GPSAlt
+		   altDiff = Math.round((traffic.altitude - BaroAltitude) / 100);;
+		} else {
+		   altDiff = traffic.altitude;   //take absolute altitude
+                }
+		if ( Math.abs(altDiff) > AltDiffThreshold )  {
+		   if ( doUpdate == 1) radar.update();
+                   return;    //finished
+                }
+
 		avgLat = radiansRel((Lat+traffic.lat)/2);
                 distanceLat = (radiansRel(traffic.lat-Lat) * radius_earth) / 1852;
                 distanceLng = ((radiansRel(traffic.lon-Long) * radius_earth) / 1852) * Math.abs(Math.cos(avgLat));
@@ -120,17 +142,8 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 		var disty = -Math.round(200 / DisplayRadius*distanceLat);
 		var distradius = Math.sqrt((distanceLat*distanceLat) + (distanceLng*distanceLng));   // pythagoras
 		//console.log("Alt %f Long %f Lat %f DistanceLong %f DistLat %f Heading %f dx %d dy %d\n", traffic.altitude, traffic.lon, traffic.lat, distanceLat, distanceLng, traffic.heading, distx, disty);
-		if (traffic.planeimg) {   //delete Images + Text
-			traffic.planeimg.remove().forget();
-			traffic.planetext.remove().forget();  
-                }
-		var altDiff;   //difference of altitude to my altitude
-		if ( BaroAltitude > -100000 ) {  // valid BaroAlt or valid GPSAlt
-		   altDiff = Math.round((traffic.altitude - BaroAltitude) / 100);;
-		} else {
-		   altDiff = traffic.altitude;   //take absolute altitude
-		}
-		if ( (Math.abs(altDiff) <= AltDiffThreshold ) && (distradius<=DisplayRadius) ) {
+		if ( distradius<=DisplayRadius ) {
+		        doUpdate = 1;	
 			if ( traffic.dist<=(DisplayRadius/2) ) {
 				if (!traffic.alarms) traffic.alarms = 0;
 				if (traffic.alarms <=MaxAlarms ) sound_alert.play();  // play alarmtone max 5 times
@@ -155,6 +168,7 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 			traffic.planetext = radar.rScreen.text(vorzeichen + Math.abs(altDiff)+pfeil) 
                             .center(distx-6,disty-12).rotate(heading, distx, disty).addClass('textPlane');;
 		} 
+		if ( doUpdate == 1) radar.update();   // only necessary if changes were done
 	}
 
 	function expMovingAverage (oldema, newsignal, timelack) {
@@ -182,45 +196,28 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 		new_traffic.time = utcTimeString(timestamp);
 		new_traffic.signal = obj.SignalLevel;
 		new_traffic.ema = expMovingAverage(new_traffic.ema, new_traffic.signal, timeLack);
-		new_traffic.addr_symb ='\u2708';
-		if (new_traffic.targettype > 3) {
-			new_traffic.addr_symb ='\ud83d\udce1';
-		}
-		new_traffic.icao = obj.Icao_addr.toString(16).toUpperCase();
-		new_traffic.tail = obj.Tail;
-		new_traffic.reg = obj.Reg;
-		if (obj.Squawk == 0) {
-			new_traffic.squawk = "----";
-		} else {
-			new_traffic.squawk = obj.Squawk;
-		}
-		new_traffic.addr_type = obj.Addr_type;
+
 		new_traffic.lat = obj.Lat;
 		new_traffic.lon = obj.Lng;
 		var n = Math.round(obj.Alt / 25) * 25;
 		new_traffic.altitude = n;
-		new_traffic.alt = n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-		var s = Math.round(obj.Speed / 5) * 5;
-		if (obj.Speed_valid) {
-			new_traffic.speed = s.toString();
-			new_traffic.heading = Math.round(obj.Track / 5) * 5;
-		} else {
-			new_traffic.speed = "---";
-			new_traffic.heading = "---";
-		}
-		new_traffic.vspeed = Math.round(obj.Vvel / 100) * 100
+
+   		if (obj.Speed_valid) {
+                        new_traffic.heading = Math.round(obj.Track / 5) * 5;
+                } else {
+                        new_traffic.heading = "---";
+                }
+                new_traffic.vspeed = Math.round(obj.Vvel / 100) * 100
+
+
 		new_traffic.age = obj.Age;
 		new_traffic.ageLastAlt = obj.AgeLastAlt;
-		new_traffic.src = obj.Last_source; // 1=ES, 2=UAT
-		new_traffic.bearing = Math.round(obj.Bearing); // degrees true 
-		new_traffic.dist = (obj.Distance/1852); // nautical miles
-		// return new_aircraft;
 	}
 
 	function onMessageNew (msg) {
 			
 		var message = JSON.parse(msg.data);
-		$scope.raw_data = angular.toJson(msg.data, true);
+		//$scope.raw_data = angular.toJson(msg.data, true);
 			
 		// we need to use an array so AngularJS can perform sorting; it also means we need to loop to find an aircraft in the traffic set
 		var validIdx = -1;
@@ -234,7 +231,8 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 			}
 		}
 				
-		for (var i = 0, len = $scope.data_list_invalid.length; i < len; i++) {
+		if ( validIdx < 0 ) {   // not yet found
+		   for (var i = 0, len = $scope.data_list_invalid.length; i < len; i++) {
 			if ($scope.data_list_invalid[i].icao_int === message.Icao_addr) {
 				setAircraft(message, $scope.data_list_invalid[i]);
 				if (!message.Position_valid) checkCollisionVector($scope.data_list_invalid[i]);
@@ -242,6 +240,7 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 				invalidIdx = i;
 				break;
 			}
+                   }
 		}
 		var new_traffic = {};
 				
@@ -310,13 +309,14 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 		};
 
 		socket.onmessage = function (msg) {
-			ownSituation($scope);
+			//ownSituation($scope);   move to getclock
 			onMessageNew(msg);
-			radar.update();
+		        //radar.update();   moved to changes
 		};
 	}
 
 	var getClock = $interval(function () {
+		ownSituation($scope);
 		$http.get(URL_STATUS_GET).
 		then(function (response) {
 			globalStatus = angular.fromJson(response.data);
@@ -337,7 +337,7 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 			radar.update();
 						
 		}, function (response) {
-			// nop
+			radar.update();  // just update, if status gets error
 		});
 	}, 500, 0, false);
 		
@@ -548,7 +548,6 @@ function ownSituation(scope)
        } else {
 	   scope.GPSValid = "Valid";
        }
-      //console.log("OwnLat %f OwnLong %f GPSCourse %f BaroAlt %f\n",Lat, Long,GPSCourse,BaroAltitude);
    }
    requestsituation.send();
 }
