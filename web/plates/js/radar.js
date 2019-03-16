@@ -387,6 +387,11 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 			$scope.SecondsFast = (tempClock-tempLocalClock)/1000;
 			
 			$scope.GPS_connected = globalStatus.GPS_connected;
+		        var boardtemp = globalStatus.CPUTemp;
+		        if (boardtemp != undefined) {
+			     /* boardtemp is celcius to tenths */
+			     $scope.CPUTemp = boardtemp.toFixed(1);
+		        }
 			radar.update();
 						
 		}, function (response) {
