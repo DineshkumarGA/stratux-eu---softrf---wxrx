@@ -39,12 +39,34 @@
 	stroke-width: 3px;
 }
 
+.radar .trace {
+	fill: none;
+	stroke: #FB4204;
+	stroke-width: 2px;
+	stroke-dasharray: 2px;
+}
+
 .radar .textPlane {
 	font-size: 1.5em;
 	font-family: sans-serif;
 	text-anchor: center;
 	fill: #FB4204;
 }
+
+.radar .textPlaneSmall {
+	font-size: 1.0em;
+	font-family: sans-serif;
+	text-anchor: center;
+	fill: #FB4204;
+}
+
+.radar .textPlaneVerySmall {
+	font-size: 0.5em;
+	font-family: sans-serif;
+	text-anchor: center;
+	fill: #FB4204;
+}
+
 .radar .textSmall {
 	font-size: 1em;
 	font-family: sans-serif;
