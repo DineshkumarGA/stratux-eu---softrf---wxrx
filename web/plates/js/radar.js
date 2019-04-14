@@ -9,7 +9,7 @@ var DisplayRadius = 10;    // Radius in NM, below this radius targets are displa
 var MaxAlarms = 5;         // number of times an alarm sound is played, if airplane enters AlarmRadius
 var minimalCircle = 25;    //minimal circle in pixcel around center ist distance is very close
 var radar;    // global RadarRenderer
-var posangle = 0;   //global var for angle position of text 
+var posangle = Math.PI;   //global var for angle position of text 
 
 var zoom = [2,5,10,20,40];     // different zooms in nm
 var zoomfactor = 2;   // start with 10 nm
@@ -18,8 +18,6 @@ var altDiff = [5,10,20,50,100,500];   // Threshold to display other planes withi
 var altindex = 2;  // start with 2000 ft
 var AltDiffThreshold;    // in 100 feet display value
 
-//var stratuxip = "192.168.10.1";
-//var situationuri = "http://" + stratuxip + "/getSituation";
 var situation = {};
 
 
@@ -44,19 +42,6 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 		time += ":" + (val < 10 ? "0" + val : "" + val);
 		time += "Z";
 		return time;
-	}
-
-// chop off seconds for space
-	function dmsString(val) {
-		var deg;
-		var min;
-		deg = 0 | val;
-		min = 0 | (val < 0 ? val = -val : val) % 1 * 60;
-		
-		return [deg*deg < 100 ? "0" + deg : deg,
-				'° ',
-				min < 10 ? "0" + min : min,
-				"' "].join('');
 	}
 
 	function radiansRel (angle) {     //adopted from equations.go
@@ -101,8 +86,11 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 	function checkCollisionVector(traffic) {
 		var doUpdate = 0;    //1 if update has to be done;
 		var altDiff;   //difference of altitude to my altitude
+		var altDiffValid = 3;  // 1 = valid difference 2 = absolute height 3 = u/s
 		var distcirc = (-traffic.ema - 6) * (-traffic.ema -6) / 30;    //distance approx. in nm, 6dB for double distance
 		var distx = Math.round(200/DisplayRadius * distcirc);   // x position for circle
+		var ctxt;
+
 		if (traffic.circ) {   //delete circle + Text
 			traffic.circ.remove().forget();   // undisplay elements and clear children
 			doUpdate = 1;
@@ -111,10 +99,13 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 		if ( distx < minimalCircle ) distx = minimalCircle;
 		if ( BaroAltitude > -100000 ) {  // valid BaroAlt or valid GPSAlt
 		   altDiff = Math.round((traffic.altitude - BaroAltitude) / 100);;
+		   altDiffValid = 1;
 		} else {
-		   altDiff = traffic.altitude;   //take absolute altitude
+		   altDiffValid = 2;
 		}
-		if ( (Math.abs(altDiff) <= AltDiffThreshold ) && (distx <= 200)) {
+		if ( traffic.altitude == 0 ) altDiffValid = 3;   //set height to unspecified, nothing displayed for now
+		if ( distx <= 200 ) {
+		   if ( (Math.abs(altDiff) <= AltDiffThreshold) || (altDiffValid ==2) ) {
 			doUpdate=1;
 			if ( distcirc<=(DisplayRadius/2) ) {
 				if (!traffic.alarms) traffic.alarms = 0;
@@ -129,20 +120,29 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 			if (!traffic.posangle)  {   //not yet with position for text
 				traffic.posangle = posangle;
 				posangle = posangle + 3*Math.PI/16;
+				if (posangle > (2*Math.PI)) posangle = Math.PI;   // make sure only upper half is used 
 			}
-			var vorzeichen = "+";  
-			if (altDiff < 0) vorzeichen = "-";
-		        var outtext = radar.allScreen.text(vorzeichen+Math.abs(altDiff));
-			outtext.center(Math.round(distx*Math.cos(traffic.posangle)),Math.round(distx*Math.sin(traffic.posangle)))
-			  .addClass('textCOut'); //Outline in black 
+			if (altDiffValid == 1) {
+				var vorzeichen = "+";  
+				if (altDiff < 0) vorzeichen = "-";
+				var pfeil = "";
+				if ( traffic.vspeed > 0 ) pfeil = '\u2191';
+				if ( traffic.vspeed < 0 ) pfeil = '\u2193';
+			        var ctxt = vorzeichen+Math.abs(altDiff)+pfeil;
+			} else if (altDiffValid == 2 ) {
+				ctxt = traffic.altitude;
+			} else {
+				ctxt = "u/s";
+			}
+			var dx = Math.round(distx*Math.cos(traffic.posangle));
+			var dy = Math.round(distx*Math.sin(traffic.posangle));
+		        var outtext = radar.allScreen.text(ctxt);
+			outtext.center(dx,dy).addClass('textCOut'); //Outline in black 
 			traffic.circ.add(outtext);
-			var pfeil = "";
-			if ( traffic.vspeed > 0 ) pfeil = '\u2191';
-			if ( traffic.vspeed < 0 ) pfeil = '\u2193';
-		        var tratext = radar.allScreen.text(vorzeichen+Math.abs(altDiff)+pfeil);
-			tratext.center(Math.round(distx*Math.cos(traffic.posangle)),Math.round(distx*Math.sin(traffic.posangle)))
-			  .addClass('textCirc'); //not rotated
+		        var tratext = radar.allScreen.text(ctxt);
+			tratext.center(dx,dy).addClass('textCirc'); //not rotated
 			traffic.circ.add(tratext);
+                    } 
 		} 
 		if ( doUpdate == 1) radar.update();
         }
@@ -156,6 +156,8 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 		if (traffic.planeimg) {   //delete Images + Text
 			traffic.planeimg.remove().forget();
 			traffic.planetext.remove().forget();  
+			traffic.planespeed.remove().forget();  
+			// do not remove radar-trace
 			doUpdate = 1;
                 }
 		var altDiff;   //difference of altitude to my altitude
@@ -191,8 +193,8 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 
 			traffic.planeimg = radar.rScreen.group();
 			traffic.planeimg.path("m 32,6.5 0.5,0.9 0.4,1.4 5.3,0.1 -5.3,0.1 0.1,0.5 0.3,0.1 0.6,0.4 0.4,0.4 0.4,0.8 1.1,7.1 0.1,0.8 3.7,1.7 22.2,1.3 0.5,0.1 0.3,0.3 0.3,0.7 0.2,6 -0.1,0.1 -26.5,2.8 -0.3,0.1 -0.4,0.3 -0.3,0.5 -0.1,0.3 -0.9,6.3 -1.7,10.3 9.5,0 0.2,0.1 0.2,0.2 -0.1,4.6 -0.2,0.2 -8.8,0 -1.1,-2.4 -0.2,2.5 -0.3,2.5 -0.3,-2.5 -0.2,-2.5 -1.1,2.4 -8.8,0 -0.2,-0.2 -0.1,-4.6 0.2,-0.2 0.2,-0.1 9.5,0 -1.7,-10.3 -0.9,-6.3 -0.1,-0.3 -0.3,-0.5 -0.4,-0.3 -0.3,-0.1 -26.5,-2.8 -0.1,-0.1 0.2,-6 0.3,-0.7 0.3,-0.3 0.5,-0.1 22.2,-1.3 3.7,-1.7 0,-0.8 1.2,-7.1 0.4,-0.8 0.4,-0.4 0.6,-0.4 0.3,-0.1 0.1,-0.5 -5.3,-0.1 5.3,-0.1 0.4,-1.4 z")
-				.addClass('plane').size(20,20).center(distx,disty+3);
-			traffic.planeimg.circle(2).center(distx,disty).fill("#000000");;
+				.addClass('plane').size(30,30).center(distx,disty+3);
+			traffic.planeimg.circle(2).center(distx,disty).addClass('planeRotationPoint');
 			traffic.planeimg.rotate(heading, distx, disty);
 
 			var vorzeichen = "+";   
@@ -201,13 +203,29 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 			if ( traffic.vspeed > 0 ) pfeil = '\u2191';
 			if ( traffic.vspeed < 0 ) pfeil = '\u2193';
 			traffic.planetext = radar.rScreen.text(vorzeichen + Math.abs(altDiff)+pfeil) 
-                            .center(distx-6,disty-12).rotate(heading, distx, disty).addClass('textPlane');;
-		} 
+                            .center(distx-6,disty-18).rotate(heading, distx, disty).addClass('textPlane');
+			traffic.planespeed = radar.rScreen.text(traffic.nspeed + 'kts')
+                           .move(distx+5,disty).rotate(heading, distx, disty).addClass('textPlaneSmall');
+			if (!traffic.trace) {
+			     traffic.trace = radar.rScreen.polyline([[distx,disty]]).addClass('trace');
+			} else {
+				var points = traffic.trace.attr('points');
+				points += ' '+[distx,disty];
+				traffic.trace.attr('points', points);
+			}
+		} else {   // if airplane is outside of radarscreen
+			if ( traffic.trace ) {   //remove trace when aircraft gets out of range
+			     traffic.trace.remove().forget(); 
+			     traffic.trace = '';;
+			     doUpdate = 1;
+			}
+			traffic.alarms = 0;   //reset alarm counter
+	        }	
 		if ( doUpdate == 1) radar.update();   // only necessary if changes were done
 	}
 
 	function expMovingAverage (oldema, newsignal, timelack) {
-		var lambda = 0.3;
+		var lambda = 0.5;
 		if (!newsignal) {    //sometimes newsign=NaN
 			return oldema;
 		}
@@ -236,10 +254,15 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 		new_traffic.lon = obj.Lng;
 		var n = Math.round(obj.Alt / 25) * 25;
 		new_traffic.altitude = n;
+		if (new_traffic.altitude == 0) {
+			console.log("Zero Alt");
+		}
 
-   		if (obj.Speed_valid) {
+		if (obj.Speed_valid) {
+			new_traffic.nspeed = Math.round(obj.Speed / 5) * 5;
                         new_traffic.heading = Math.round(obj.Track / 5) * 5;
                 } else {
+			new_traffic.nspeed = "-";
                         new_traffic.heading = "---";
                 }
                 new_traffic.vspeed = Math.round(obj.Vvel / 100) * 100
@@ -247,6 +270,7 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 
 		new_traffic.age = obj.Age;
 		new_traffic.ageLastAlt = obj.AgeLastAlt;
+                new_traffic.dist = (obj.Distance/1852); 
 	}
 
 	function onMessageNew (msg) {
@@ -297,6 +321,11 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 			if ( $scope.data_list[validIdx].planeimg ) { 
 				$scope.data_list[validIdx].planeimg.remove().forget();  // remove plane image
 				$scope.data_list[validIdx].planetext.remove().forget();  // remove plane image
+				$scope.data_list[validIdx].planespeed.remove().forget();  // remove plane image
+				if ( $scope.data_list[validIdx].trace ) { 
+				    $scope.data_list[validIdx].trace.remove().forget();  // remove plane image
+				    $scope.data_list[validIdx].trace = '';
+				}
 			}
 			$scope.data_list.splice(validIdx, 1);
 		}
@@ -403,7 +432,7 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 
 	// perform cleanup every 10 seconds
 	var clearStaleTraffic = $interval(function () {
-		// remove stale aircraft = anything more than 59 seconds without a position update
+		// remove stale aircraft = anything more than 20 seconds without a position update
 		var cutoff = 59;
 
 		// Clean up "valid position" table.
@@ -412,6 +441,11 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 				if ( $scope.data_list[i-1].planeimg ) { 
 					$scope.data_list[i-1].planeimg.remove().forget();  // remove plane image
 					$scope.data_list[i-1].planetext.remove().forget();  // remove plane image
+					$scope.data_list[i-1].planespeed.remove().forget();  // remove plane image
+					if ( $scope.data_list[i-1].trace ) { 
+					    $scope.data_list[i-1].trace.remove().forget();  // remove plane image
+					    $scope.data_list[i-1].trace = '';
+					}
 				}
 				$scope.data_list.splice(i - 1, 1);
 			}
@@ -449,9 +483,28 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 	connect($scope); // connect - opens a socket and listens for messages
 }
 
+function clearRadarTraces ($scope) {
+	for (var i = $scope.data_list.length; i > 0; i--) {
+	     if ( $scope.data_list[i-1].planeimg ) { 
+		$scope.data_list[i-1].planeimg.remove().forget();  // remove plane image
+		$scope.data_list[i-1].planetext.remove().forget();  // remove plane image
+		$scope.data_list[i-1].planespeed.remove().forget();  // remove plane image
+		$scope.data_list[i-1].alarms = 0; //reset alarm counter
+                if ( $scope.data_list[i-1].trace ) {
+			$scope.data_list[i-1].trace.remove().forget();  // remove plane image
+			$scope.data_list[i-1].trace = '';
+		}
+	     }
+	}
+}
 
+function requestFullScreen(el) {
+   // Supports most browsers and their versions.
+   var requestMethod = el.requestFullscreen || el.webkitRequestFullScreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+   if (requestMethod) requestMethod.call(el);
+}
 
-function RadarRenderer(locationId,scope) {
+function RadarRenderer(locationId,$scope) {
     this.width = -1;
     this.height = -1;
 
@@ -463,23 +516,24 @@ function RadarRenderer(locationId,scope) {
     DisplayRadius = zoom[zoomfactor];	
 
     // Draw the radar using the svg.js library
-    var radarAll = SVG(this.locationId).viewbox(-200, -200, 400, 400).group().addClass('radar');
+    var radarAll = SVG(this.locationId).viewbox(-202, -202, 402, 402).group().addClass('radar');
+    var background = radarAll.rect(402,402).radius(5).x(-202).y(-202).addClass('blackRect');
     var card = radarAll.group().addClass('card');
     card.circle(400).cx(0).cy(0);  
-    card.circle(200).cx(0).cy(0).stroke("white");  
-    this.displayText = radarAll.text(DisplayRadius+' nm').addClass('textOutside').center(-165,190);  //not rotated
-    this.altText = radarAll.text('\xB1'+AltDiffThreshold+'00ft').addClass('textOutsideRight').x(200).cy(190);  //not rotated
+    card.circle(200).cx(0).cy(0);  
+    this.displayText = radarAll.text(DisplayRadius+' nm').addClass('textOutside').x(-200).cy(-158);  //not rotated
+    this.altText = radarAll.text('\xB1'+AltDiffThreshold+'00ft').addClass('textOutsideRight').x(200).cy(-158);  //not rotated
     card.text("N").addClass('textDir').center(0,-190);
     card.text("S").addClass('textDir').center(0,190);
     card.text("W").addClass('textDir').center(-190,0);
     card.text("E").addClass('textDir').center(190,0);
 
-    var middle=radarAll.path("m 32,6.5 0.5,0.9 0.4,1.4 5.3,0.1 -5.3,0.1 0.1,0.5 0.3,0.1 0.6,0.4 0.4,0.4 0.4,0.8 1.1,7.1 0.1,0.8 3.7,1.7 22.2,1.3 0.5,0.1 0.3,0.3 0.3,0.7 0.2,6 -0.1,0.1 -26.5,2.8 -0.3,0.1 -0.4,0.3 -0.3,0.5 -0.1,0.3 -0.9,6.3 -1.7,10.3 9.5,0 0.2,0.1 0.2,0.2 -0.1,4.6 -0.2,0.2 -8.8,0 -1.1,-2.4 -0.2,2.5 -0.3,2.5 -0.3,-2.5 -0.2,-2.5 -1.1,2.4 -8.8,0 -0.2,-0.2 -0.1,-4.6 0.2,-0.2 0.2,-0.1 9.5,0 -1.7,-10.3 -0.9,-6.3 -0.1,-0.3 -0.3,-0.5 -0.4,-0.3 -0.3,-0.1 -26.5,-2.8 -0.1,-0.1 0.2,-6 0.3,-0.7 0.3,-0.3 0.5,-0.1 22.2,-1.3 3.7,-1.7 0,-0.8 1.2,-7.1 0.4,-0.8 0.4,-0.4 0.6,-0.4 0.3,-0.1 0.1,-0.5 -5.3,-0.1 5.3,-0.1 0.4,-1.4 z").fill("#FFFF00");
-    middle.size(20,20).center(0,3).addClass('centerplane');
-    radarAll.circle(2).center(0,0).fill("#000000");
+    var middle=radarAll.path("m 32,6.5 0.5,0.9 0.4,1.4 5.3,0.1 -5.3,0.1 0.1,0.5 0.3,0.1 0.6,0.4 0.4,0.4 0.4,0.8 1.1,7.1 0.1,0.8 3.7,1.7 22.2,1.3 0.5,0.1 0.3,0.3 0.3,0.7 0.2,6 -0.1,0.1 -26.5,2.8 -0.3,0.1 -0.4,0.3 -0.3,0.5 -0.1,0.3 -0.9,6.3 -1.7,10.3 9.5,0 0.2,0.1 0.2,0.2 -0.1,4.6 -0.2,0.2 -8.8,0 -1.1,-2.4 -0.2,2.5 -0.3,2.5 -0.3,-2.5 -0.2,-2.5 -1.1,2.4 -8.8,0 -0.2,-0.2 -0.1,-4.6 0.2,-0.2 0.2,-0.1 9.5,0 -1.7,-10.3 -0.9,-6.3 -0.1,-0.3 -0.3,-0.5 -0.4,-0.3 -0.3,-0.1 -26.5,-2.8 -0.1,-0.1 0.2,-6 0.3,-0.7 0.3,-0.3 0.5,-0.1 22.2,-1.3 3.7,-1.7 0,-0.8 1.2,-7.1 0.4,-0.8 0.4,-0.4 0.6,-0.4 0.3,-0.1 0.1,-0.5 -5.3,-0.1 5.3,-0.1 0.4,-1.4 z");
+    middle.size(25,25).center(0,3).addClass('centerplane');
+    radarAll.circle(2).center(0,0).addClass('planeRotationPoint');
 
-    var zoomin = radarAll.group().cx(-170).cy(150).addClass('zoom');
-    zoomin.circle(50).cx(0).cy(0).addClass('zoom');
+    var zoomin = radarAll.group().cx(-120).cy(-190).addClass('zoom');
+    zoomin.circle(45).cx(0).cy(0).addClass('zoom');
     zoomin.text('Ra-').cx(12).cy(2).addClass('textZoom');
     zoomin.on('click', function () {
 	var animateTime= 200;
@@ -493,10 +547,11 @@ function RadarRenderer(locationId,scope) {
         this.displayText.text(DisplayRadius+' nm');
 	//update();
         zoomin.animate(animateTime).rotate(0, 0, 0);
+	clearRadarTraces($scope);
     }, this);
 
-    var zoomout = radarAll.group().cx(-170).cy(-150).addClass('zoom');
-    zoomout.circle(50).cx(0).cy(0).addClass('zoom');
+    var zoomout = radarAll.group().cx(-177).cy(-190).addClass('zoom');
+    zoomout.circle(45).cx(0).cy(0).addClass('zoom');
     zoomout.text('Ra+').cx(12).cy(2).addClass('textZoom');
     zoomout.on('click', function () {
 	var animateTime= 200;
@@ -507,13 +562,13 @@ function RadarRenderer(locationId,scope) {
 	}
         DisplayRadius = zoom[zoomfactor];	
 	zoomout.animate(animateTime).rotate(90, 0, 0);
-        //update();
         this.displayText.text(DisplayRadius+' nm');
         zoomout.animate(animateTime).rotate(0, 0, 0);
+	clearRadarTraces($scope);
     }, this);
 
-    var altmore = radarAll.group().cx(170).cy(-150).addClass('zoom');
-    altmore.circle(50).cx(0).cy(0).addClass('zoom');
+    var altmore = radarAll.group().cx(120).cy(-190).addClass('zoom');
+    altmore.circle(45).cx(0).cy(0).addClass('zoom');
     altmore.text('Alt+').cx(12).cy(2).addClass('textZoom');
     altmore.on('click', function () {
 	var animateTime= 200;
@@ -527,10 +582,11 @@ function RadarRenderer(locationId,scope) {
         this.altText.text('\xB1'+AltDiffThreshold+'00ft');
 	//update();
         altmore.animate(animateTime).rotate(0, 0, 0);
+	clearRadarTraces($scope);
     }, this);
 
-    var altless = radarAll.group().cx(170).cy(150).addClass('zoom');
-    altless.circle(50).cx(0).cy(0).addClass('zoom');
+    var altless = radarAll.group().cx(177).cy(-190).addClass('zoom');
+    altless.circle(45).cx(0).cy(0).addClass('zoom');
     altless.text('Alt-').cx(12).cy(2).addClass('textZoom');
     altless.on('click', function () {
 	var animateTime= 200;
@@ -544,6 +600,15 @@ function RadarRenderer(locationId,scope) {
         //update();
         this.altText.text('\xB1'+AltDiffThreshold+'00ft');
         altless.animate(animateTime).rotate(0, 0, 0);
+	clearRadarTraces($scope);
+    }, this);
+
+    var fullscreen = radarAll.group().cx(190).cy(-125).addClass('zoom');
+    fullscreen.rect(45,35).radius(10).cx(0).cy(0).addClass('zoom');
+    fullscreen.text('F/S').cx(5).cy(2).addClass('textZoom');
+    fullscreen.on('click', function () {
+	   var canvas = this.canvas.parentElement.parentElement;
+	   if (canvas.requestFullscreen) canvas.requestFullscreen();
     }, this);
 
 
