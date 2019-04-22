@@ -17,6 +17,7 @@ var zoomfactor = 2;   // start with 10 nm
 var altDiff = [5,10,20,50,100,500];   // Threshold to display other planes within altitude difference in 100 ft
 var altindex = 2;  // start with 2000 ft
 var AltDiffThreshold;    // in 100 feet display value
+var storageDiff = 20;   // altitude difference in 100 ft below airplane is stored in list (otherwise do not even consider, performance optimization
 
 var situation = {};
 
@@ -101,11 +102,11 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 		   altDiff = Math.round((traffic.altitude - BaroAltitude) / 100);;
 		   altDiffValid = 1;
 		} else {
-		   altDiffValid = 2;
+		   altDiffValid = 2;   //altDiff is absolute height
 		}
 		if ( traffic.altitude == 0 ) altDiffValid = 3;   //set height to unspecified, nothing displayed for now
 		if ( distx <= 200 ) {
-		   if ( (Math.abs(altDiff) <= AltDiffThreshold) || (altDiffValid ==2) ) {
+		   if ( ((altDiffValid == 1) && (Math.abs(altDiff) <= AltDiffThreshold)) || (altDiffValid ==2) ) {
 			doUpdate=1;
 			if ( distcirc<=(DisplayRadius/2) ) {
 				if (!traffic.alarms) traffic.alarms = 0;
@@ -136,12 +137,14 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 			}
 			var dx = Math.round(distx*Math.cos(traffic.posangle));
 			var dy = Math.round(distx*Math.sin(traffic.posangle));
-		        var outtext = radar.allScreen.text(ctxt);
-			outtext.center(dx,dy).addClass('textCOut'); //Outline in black 
+		        var outtext = radar.allScreen.text(ctxt).center(dx,dy).addClass('textCOut'); //Outline in black 
 			traffic.circ.add(outtext);
-		        var tratext = radar.allScreen.text(ctxt);
-			tratext.center(dx,dy).addClass('textCirc'); //not rotated
+		        var tratext = radar.allScreen.text(ctxt).center(dx,dy).addClass('textCirc'); //not rotated
 			traffic.circ.add(tratext);
+		        var tailout = radar.allScreen.text(traffic.tail).center(dx,dy-16).addClass('textRegOut');  
+			traffic.circ.add(tailout);
+		        var tailtext = radar.allScreen.text(traffic.tail).center(dx,dy-16).addClass('textCircReg');
+			traffic.circ.add(tailtext);
                     } 
 		} 
 		if ( doUpdate == 1) radar.update();
@@ -157,6 +160,7 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 			traffic.planeimg.remove().forget();
 			traffic.planetext.remove().forget();  
 			traffic.planespeed.remove().forget();  
+			traffic.planetail.remove().forget();  
 			// do not remove radar-trace
 			doUpdate = 1;
                 }
@@ -202,10 +206,12 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 			var pfeil = "";
 			if ( traffic.vspeed > 0 ) pfeil = '\u2191';
 			if ( traffic.vspeed < 0 ) pfeil = '\u2193';
-			traffic.planetext = radar.rScreen.text(vorzeichen + Math.abs(altDiff)+pfeil) 
-                            .center(distx-6,disty-18).rotate(heading, distx, disty).addClass('textPlane');
-			traffic.planespeed = radar.rScreen.text(traffic.nspeed + 'kts')
-                           .move(distx+5,disty).rotate(heading, distx, disty).addClass('textPlaneSmall');
+			traffic.planetext = radar.rScreen.text(vorzeichen + Math.abs(altDiff)+pfeil).move(distx+17,disty-10)
+				.rotate(GPSCourse, distx, disty).addClass('textPlane');
+			traffic.planespeed = radar.rScreen.text(traffic.nspeed + 'kts').move(distx+17,disty)
+				.rotate(GPSCourse, distx, disty).addClass('textPlaneSmall');
+			traffic.planetail = radar.rScreen.text(traffic.tail).move(distx+17,disty+10)
+				.rotate(GPSCourse, distx, disty).addClass('textPlaneReg');
 			if (!traffic.trace) {
 			     traffic.trace = radar.rScreen.polyline([[distx,disty]]).addClass('trace');
 			} else {
@@ -254,9 +260,6 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 		new_traffic.lon = obj.Lng;
 		var n = Math.round(obj.Alt / 25) * 25;
 		new_traffic.altitude = n;
-		if (new_traffic.altitude == 0) {
-			console.log("Zero Alt");
-		}
 
 		if (obj.Speed_valid) {
 			new_traffic.nspeed = Math.round(obj.Speed / 5) * 5;
@@ -271,6 +274,7 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 		new_traffic.age = obj.Age;
 		new_traffic.ageLastAlt = obj.AgeLastAlt;
                 new_traffic.dist = (obj.Distance/1852); 
+		new_traffic.tail = obj.Tail;   //registration No
 	}
 
 	function onMessageNew (msg) {
@@ -279,14 +283,21 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 		//$scope.raw_data = angular.toJson(msg.data, true);
 			
 		// we need to use an array so AngularJS can perform sorting; it also means we need to loop to find an aircraft in the traffic set
+		// only aircraft in possible display position are stored
 		var validIdx = -1;
 		var invalidIdx = -1;
+		var altDiffValid = false; 
+		var altDiff;
+		if ( (BaroAltitude > -100000) && (message.Alt > 0)) {  // valid BaroAlt or valid GPSAlt and valid altitude
+			altDiff = Math.round((message.Alt - BaroAltitude) / 100);
+			altDiffValid = true;
+		}
 		for (var i = 0, len = $scope.data_list.length; i < len; i++) {
 			if ($scope.data_list[i].icao_int === message.Icao_addr) {
 				setAircraft(message, $scope.data_list[i]);
 				if (message.Position_valid) checkCollisionVectorValid($scope.data_list[i]);
 				validIdx = i;
-				break;
+				break;  // break in anycase, if once found
 			}
 		}
 				
@@ -304,15 +315,20 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 		var new_traffic = {};
 				
 		if ((validIdx < 0) && (message.Position_valid)) {    //new aircraft with valid position
-			setAircraft(message, new_traffic);
-			checkCollisionVectorValid(new_traffic);
-			$scope.data_list.unshift(new_traffic); // add to start of valid array.
+			if ( altDiffValid && (Math.abs(altDiff) <= AltDiffThreshold) )  { 
+				// optimization: only store ADSB aircraft if inside altDiff
+				setAircraft(message, new_traffic);
+				checkCollisionVectorValid(new_traffic);
+				$scope.data_list.unshift(new_traffic); // add to start of valid array.
+			}    // else not added in list, since not relevant 
 		}
 
 		if ((invalidIdx < 0) && (!message.Position_valid)) {     // new aircraft without position
-			setAircraft(message, new_traffic);
-			checkCollisionVector(new_traffic);
-			$scope.data_list_invalid.unshift(new_traffic); // add to start of invalid array.
+			if ( altDiffValid && (Math.abs(altDiff) <= (AltDiffThreshold + storageDiff)) )  { 
+				setAircraft(message, new_traffic);  //store in any case, since EMA needs history of dB
+				checkCollisionVector(new_traffic);
+				$scope.data_list_invalid.unshift(new_traffic); // add to start of invalid array.
+			}    // else not added in list, since not relevant 
 		}
 
 		// Handle the negative cases of those above - where an aircraft moves from "valid" to "invalid" or vice-versa.
@@ -322,6 +338,7 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 				$scope.data_list[validIdx].planeimg.remove().forget();  // remove plane image
 				$scope.data_list[validIdx].planetext.remove().forget();  // remove plane image
 				$scope.data_list[validIdx].planespeed.remove().forget();  // remove plane image
+				$scope.data_list[validIdx].planetail.remove().forget();  // remove plane image
 				if ( $scope.data_list[validIdx].trace ) { 
 				    $scope.data_list[validIdx].trace.remove().forget();  // remove plane image
 				    $scope.data_list[validIdx].trace = '';
@@ -442,6 +459,7 @@ function RadarCtrl($rootScope, $scope, $state, $http, $interval) {
 					$scope.data_list[i-1].planeimg.remove().forget();  // remove plane image
 					$scope.data_list[i-1].planetext.remove().forget();  // remove plane image
 					$scope.data_list[i-1].planespeed.remove().forget();  // remove plane image
+					$scope.data_list[i-1].planetail.remove().forget();  // remove plane image
 					if ( $scope.data_list[i-1].trace ) { 
 					    $scope.data_list[i-1].trace.remove().forget();  // remove plane image
 					    $scope.data_list[i-1].trace = '';
@@ -489,6 +507,7 @@ function clearRadarTraces ($scope) {
 		$scope.data_list[i-1].planeimg.remove().forget();  // remove plane image
 		$scope.data_list[i-1].planetext.remove().forget();  // remove plane image
 		$scope.data_list[i-1].planespeed.remove().forget();  // remove plane image
+		$scope.data_list[i-1].planetail.remove().forget();  // remove plane image
 		$scope.data_list[i-1].alarms = 0; //reset alarm counter
                 if ( $scope.data_list[i-1].trace ) {
 			$scope.data_list[i-1].trace.remove().forget();  // remove plane image
@@ -504,6 +523,19 @@ function requestFullScreen(el) {
    if (requestMethod) requestMethod.call(el);
 }
 
+
+function cancelFullScreen(el) {
+   var requestMethod = el.cancelFullScreen||el.webkitCancelFullScreen||el.mozCancelFullScreen||el.exitFullscreen;
+   if (requestMethod) { // cancel full screen.
+        requestMethod.call(el);
+   } else if (typeof window.ActiveXObject !== "undefined") { // Older IE.
+       var wscript = new ActiveXObject("WScript.Shell");
+       if (wscript !== null) {
+            wscript.SendKeys("{F11}");
+       }
+   }
+}
+
 function RadarRenderer(locationId,$scope) {
     this.width = -1;
     this.height = -1;
@@ -516,8 +548,8 @@ function RadarRenderer(locationId,$scope) {
     DisplayRadius = zoom[zoomfactor];	
 
     // Draw the radar using the svg.js library
-    var radarAll = SVG(this.locationId).viewbox(-202, -202, 402, 402).group().addClass('radar');
-    var background = radarAll.rect(402,402).radius(5).x(-202).y(-202).addClass('blackRect');
+    var radarAll = SVG(this.locationId).viewbox(-201, -201, 402, 302).group().addClass('radar');
+    var background = radarAll.rect(402,402).radius(5).x(-201).y(-201).addClass('blackRect');
     var card = radarAll.group().addClass('card');
     card.circle(400).cx(0).cy(0);  
     card.circle(200).cx(0).cy(0);  
@@ -603,12 +635,18 @@ function RadarRenderer(locationId,$scope) {
 	clearRadarTraces($scope);
     }, this);
 
-    var fullscreen = radarAll.group().cx(190).cy(-125).addClass('zoom');
-    fullscreen.rect(45,35).radius(10).cx(0).cy(0).addClass('zoom');
-    fullscreen.text('F/S').cx(5).cy(2).addClass('textZoom');
+    var fullscreen = radarAll.group().cx(185).cy(-125).addClass('zoom');
+    fullscreen.rect(40,35).radius(10).cx(0).cy(0).addClass('zoom');
+    fullscreen.text('F/S').cx(10).cy(2).addClass('textZoom');
     fullscreen.on('click', function () {
-	   var canvas = this.canvas.parentElement.parentElement;
-	   if (canvas.requestFullscreen) canvas.requestFullscreen();
+	   var elem = this.canvas;
+           var isInFullScreen = (document.fullScreenElement && document.fullScreenElement !== null) ||  (document.mozFullScreen || document.webkitIsFullScreen);
+
+            if (isInFullScreen) {
+                cancelFullScreen(document);
+            } else {
+                requestFullScreen(elem);
+            }
     }, this);
 
 
